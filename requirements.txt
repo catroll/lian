@@ -1,0 +1,4 @@
+setuptools
+pymysql
+tornado
+redis
