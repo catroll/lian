@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 
-import redis as _redis
+import redis
 
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
@@ -15,7 +15,7 @@ __all__ = 'Redis',
 LOG = logging.getLogger(__name__)
 
 
-class StrictRedisWrapper(_redis.StrictRedis):
+class StrictRedisWrapper(redis.StrictRedis):
     def execute_command(self, *args, **options):
         start_time = time.time()
         try:
@@ -82,12 +82,12 @@ class Redis(object):
         pipe.reset()
 
     def hpop(self, name):
-        tkey = self.redis.hkeys(name)
-        if len(tkey) > 0:
-            trade = self.redis.hget(name, tkey[0])
-            self.redis.hdel(name, tkey[0])
-            if trade:
-                return trade.decode('utf-8')
+        keys = self.redis.hkeys(name)
+        if len(keys) > 0:
+            val = self.redis.hget(name, keys[0])
+            self.redis.hdel(name, keys[0])
+            if val:
+                return val.decode('utf-8')
         return None
 
     def hset(self, name, key, value):
@@ -95,6 +95,12 @@ class Redis(object):
 
     def keys(self, name):
         return self.redis.scan(cursor=0, match=name, count=1000)[1]
+
+    def mget(self, keys, *args):
+        return self.redis.mget(keys, *args)
+
+    def hmget(self, name, keys, *args):
+        return self.redis.hmget(name, keys, *args)
 
     def gets(self, keys, as_list=False):
         if isinstance(keys, str):
