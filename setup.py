@@ -1,4 +1,5 @@
-#
+# -*- coding: utf-8 -*-
+
 # Copyright 2009 SendCloud
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,7 +16,7 @@
 
 from setuptools import setup
 
-version = '0.0.2'
+version = '0.0.1'
 
 with open('requirements.txt') as _file:
     requires = [i.strip() for i in _file]
@@ -26,7 +27,7 @@ with open('README.rst') as file:
 setup(
     name='lian',
     version=version,
-    packages=['lian'],
+    packages=['lian', 'lian.orm', 'lian.utils'],
     license='http://www.apache.org/licenses/LICENSE-2.0',
     author='Hu Ang',
     author_email='ninedoors@126.com',
