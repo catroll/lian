@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+
+"""
+from https://stackoverflow.com/questions/31875/is-there-a-simple-elegant-way-to-define-singletons
+"""
+
+
 class singleton:
     """
     A non-thread-safe helper class to ease implementing singletons.
@@ -12,7 +19,6 @@ class singleton:
     to use `__call__` will result in a `TypeError` being raised.
 
     Limitations: The decorated class cannot be inherited from.
-
     """
 
     def __init__(self, decorated):
@@ -23,7 +29,6 @@ class singleton:
         Returns the singleton instance. Upon its first call, it creates a
         new instance of the decorated class and calls its `__init__` method.
         On all subsequent calls, the already created instance is returned.
-
         """
         try:
             return self._instance
