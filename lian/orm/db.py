@@ -245,7 +245,6 @@ class BASE(object):
 
         fields_str = _fields_sql(fields, select_mode=True) or '*'
         sql = 'SELECT %s FROM `%s` WHERE %s' % (fields_str, self.__table__, make_tree(conditions))
-        print (sql)
 
         if isinstance(group_by, (tuple, list, str)) and group_by:
             if isinstance(group_by, str):
@@ -296,7 +295,6 @@ class BASE(object):
 
     def update(self, values, conditions=None):
         sql = 'UPDATE `%s` SET %s WHERE %s' % (self.__table__, _set_sql(values), make_tree(conditions))
-        print (sql)
         result = execute(sql, auto_commit=True)
         return result['rowcount']  # 影响行数
 
