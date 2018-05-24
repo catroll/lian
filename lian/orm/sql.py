@@ -22,14 +22,7 @@
 其他：字段与值都经过转义，避免注入
 """
 
-import re
-
 import pymysql
-
-SQL_OPS = [
-    'like', 'endswith', 'startswith', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'is_null'
-]
-RE_SQL_OP = re.compile('^([^ ]+)__(%s)$' % ('|'.join(SQL_OPS)))
 
 
 def escaped_str(_str):
@@ -49,10 +42,11 @@ class SQLNode(object):
         if value is None:
             self.key = key
             self.exp = 'is_null'
+            self.value = True
         else:
-            _re_result = RE_SQL_OP.findall(key)
-            if _re_result and callable(getattr(self, '_exp_' + _re_result[0][1], None)):
-                self.key, self.exp = _re_result[0]
+            parts = key.split('__')
+            if len(parts) == 2 and callable(getattr(self, '_exp_' + parts[1], None)):
+                self.key, self.exp = parts[0]
             else:
                 self.key = key
                 self.exp = None
