@@ -274,8 +274,10 @@ class BASE(object):
             assert len(values) == len(fields)
         values_str = ', '.join([escaped_var(val) for val in values])
         sql = 'INSERT INTO `%s` (%s) VALUES (%s)' % (self.__table__, _fields_sql(fields), values_str)
+
         if update:
             sql += ' ON DUPLICATE KEY UPDATE %s' % _set_sql(update)
+
         result = execute(sql, auto_commit=True)
         return self.get(result['lastrowid']) if result else None
 
