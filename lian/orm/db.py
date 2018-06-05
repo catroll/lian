@@ -175,9 +175,9 @@ def _set_sql(values):
         _re_op_result = RE_SET_OP.search(k)
         if _re_op_result:
             op, new_k = _re_op_result.groups()
-            new_k = escaped_str(k)
+            new_k = escaped_str(new_k)
             if op == 'ADD':
-                return '%s = %s + %s' % (new_k, new_k, escaped_var(v))
+                return '`%s` = `%s` + %s' % (new_k, new_k, escaped_var(v))
         return '`%s` = %s' % (escaped_str(k), escaped_var(v))
 
     return ', '.join([_set_v(k, v) for k, v in values.items()])
