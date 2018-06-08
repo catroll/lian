@@ -32,7 +32,7 @@ class SQLNode(object):
         else:
             parts = key.split('__')
             if len(parts) == 2 and callable(getattr(self, '_exp_' + parts[1], None)):
-                self.key, self.exp = parts[0]
+                self.key, self.exp = parts
             else:
                 self.key = key
                 self.exp = None
