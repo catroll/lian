@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from __future__ import absolute_import, print_function
+
 import logging
 import threading
 import time
@@ -19,7 +21,7 @@ class StrictRedisWrapper(redis.StrictRedis):
     def execute_command(self, *args, **options):
         start_time = time.time()
         try:
-            return super().execute_command(*args, **options)
+            return super(StrictRedisWrapper, self).execute_command(*args, **options)
         finally:
             time_cost = (time.time() - start_time) * 1000
             if time_cost > 50:

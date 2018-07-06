@@ -4,6 +4,8 @@
 DB Connection
 """
 
+from __future__ import absolute_import, print_function
+
 import copy
 import re
 import threading
@@ -47,7 +49,7 @@ class PooledConnection(object):
 
     def close(self):
         if self._connection is not None:
-            self._pool.returnConnection(self._connection)
+            self._pool.return_connection(self._connection)
             self._connection = None
 
     def __getattr__(self, name):
@@ -64,11 +66,11 @@ class ConnectionPool(object):
     logger = None
 
     def __init__(self, max_connections=5):
-        from queue import Queue
+        from six.moves.queue import Queue
         self._queue = Queue(max_connections)  # create the queue
 
         for i in range(0, max_connections):
-            conn = self.getConn()
+            conn = self.get_conn()
             self._queue.put(conn)
 
     @staticmethod
@@ -80,7 +82,7 @@ class ConnectionPool(object):
                     ConnectionPool._instance = ConnectionPool(max_connections)
         return ConnectionPool._instance
 
-    def getConn(self):
+    def get_conn(self):
         check_configured()
 
         _config = copy.deepcopy(self.config)
@@ -105,10 +107,10 @@ class ConnectionPool(object):
             conn.ping()
         except Exception as e:
             self.logger.exception(e)
-            conn = self.getConn()
+            conn = self.get_conn()
         return PooledConnection(self, conn)
 
-    def returnConnection(self, conn):
+    def return_connection(self, conn):
         check_configured()
         self._queue.put(conn)
 
@@ -171,14 +173,14 @@ RE_SET_OP = re.compile('^(%s):(.+)$' % ('|'.join(SET_OPS)))
 
 
 def _set_sql(values):
-    def _set_v(k, v):
-        _re_op_result = RE_SET_OP.search(k)
+    def _set_v(key, value):
+        _re_op_result = RE_SET_OP.search(key)
         if _re_op_result:
             op, new_k = _re_op_result.groups()
             new_k = escaped_str(new_k)
             if op == 'ADD':
-                return '`%s` = `%s` + %s' % (new_k, new_k, escaped_var(v))
-        return '`%s` = %s' % (escaped_str(k), escaped_var(v))
+                return '`%s` = `%s` + %s' % (new_k, new_k, escaped_var(value))
+        return '`%s` = %s' % (escaped_str(key), escaped_var(value))
 
     return ', '.join([_set_v(k, v) for k, v in values.items()])
 
@@ -203,7 +205,7 @@ def _fields_sql(fields, select_mode=False):
         return _sql_func(field)
 
     if isinstance(fields, (tuple, list)) and fields:
-        fields_str = ', '.join([_inner(field) for field in fields])
+        fields_str = ', '.join([_inner(f) for f in fields])
         return fields_str
 
     return None

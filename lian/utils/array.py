@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from __future__ import absolute_import, print_function
+
 
 def permutation(array):
     """排列组合
@@ -14,7 +16,7 @@ def permutation(array):
 
 
 def __test():
-    permutation([1, 2, 3, 4])
+    print(permutation([1, 2, 3, 4]))
 
 
 if __name__ == '__main__':

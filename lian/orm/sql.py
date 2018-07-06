@@ -8,6 +8,8 @@
 其他：字段与值都经过转义，避免注入
 """
 
+from __future__ import absolute_import, print_function
+
 import pymysql
 
 
