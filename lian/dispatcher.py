@@ -1,12 +1,17 @@
+# -*- coding: utf-8 -*-
+
+"""
+https://github.com/django/django/blob/2.0.7/django/dispatch/dispatcher.py
+modified by Hu Ang <ninedoors@126.com>
+"""
+
 import threading
 import weakref
-
-from django.utils.inspect import func_accepts_kwargs
 
 
 def _make_id(target):
     if hasattr(target, '__func__'):
-        return (id(target.__self__), id(target.__func__))
+        return id(target.__self__), id(target.__func__)
     return id(target)
 
 
@@ -25,6 +30,7 @@ class Signal:
         receivers
             { receiverkey (id) : weakref(receiver) }
     """
+
     def __init__(self, providing_args=None, use_caching=False):
         """
         Create a new signal.
@@ -79,16 +85,6 @@ class Signal:
                 a receiver. This will usually be a string, though it may be
                 anything hashable.
         """
-        from django.conf import settings
-
-        # If DEBUG is on, check that we got a good receiver
-        if settings.configured and settings.DEBUG:
-            assert callable(receiver), "Signal receivers must be callable."
-
-            # Check for **kwargs
-            if not func_accepts_kwargs(receiver):
-                raise ValueError("Signal receivers must accept keyword arguments (**kwargs).")
-
         if dispatch_uid:
             lookup_key = (dispatch_uid, _make_id(sender))
         else:
@@ -287,6 +283,7 @@ def receiver(signal, **kwargs):
         def signals_receiver(sender, **kwargs):
             ...
     """
+
     def _decorator(func):
         if isinstance(signal, (list, tuple)):
             for s in signal:
@@ -294,4 +291,5 @@ def receiver(signal, **kwargs):
         else:
             signal.connect(func, **kwargs)
         return func
+
     return _decorator
