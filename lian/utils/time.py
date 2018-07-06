@@ -3,6 +3,7 @@
 from __future__ import absolute_import, print_function
 
 import datetime
+import time
 
 DEFAULT_DATE = '%Y/%m/%d'
 DEFAULT_TIME = '%H/%M/%S'
@@ -28,6 +29,29 @@ def get_time_ten_min_align(t=None):
         if t.minute > i + 10:
             continue
         return t.replace(minute=i, second=0, microsecond=0)
+
+
+def get_timestamp(keep_int=False):
+    ts = time.time()
+    if keep_int:
+        ts = int(ts)
+    return ts
+
+
+def get_timestamp_ms(keep_int=False):
+    """ millisecond: ms """
+    ts = get_timestamp() * 1000
+    if keep_int:
+        ts = int(ts)
+    return ts
+
+
+def get_timestamp_us(keep_int=False):
+    """ microsecond: μs """
+    ts = get_timestamp() * 1000000
+    if keep_int:
+        ts = int(ts)
+    return ts
 
 
 def __test():
