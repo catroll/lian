@@ -21,9 +21,11 @@ setup(
     description='lian is a python toolkit',
     long_description=long_description,
     install_requires=requires,
-    python_requires='>=3.4',
+    python_requires='>=2.7.9,>=3.4',
     classifiers=[
         'License :: OSI Approved :: Apache Software License',
+        'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
