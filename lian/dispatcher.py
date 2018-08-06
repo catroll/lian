@@ -46,6 +46,15 @@ PyDispatcher License:
 import threading
 import weakref
 
+import six
+
+if six.PY2:
+    from lian.weakref_backports import WeakMethod
+else:
+    from weakref import WeakMethod
+
+DEBUG = False
+
 
 def _make_id(target):
     if hasattr(target, '__func__'):
@@ -59,7 +68,7 @@ NONE_ID = _make_id(None)
 NO_RECEIVERS = object()
 
 
-class Signal:
+class Signal(object):
     """
     Base class for all signals
 
@@ -123,6 +132,15 @@ class Signal:
                 a receiver. This will usually be a string, though it may be
                 anything hashable.
         """
+
+        # If DEBUG is on, check that we got a good receiver
+        if DEBUG:
+            assert callable(receiver), "Signal receivers must be callable."
+
+            # Check for **kwargs
+            if not func_accepts_kwargs(receiver):
+                raise ValueError("Signal receivers must accept keyword arguments (**kwargs).")
+
         if dispatch_uid:
             lookup_key = (dispatch_uid, _make_id(sender))
         else:
@@ -133,10 +151,13 @@ class Signal:
             receiver_object = receiver
             # Check for bound methods
             if hasattr(receiver, '__self__') and hasattr(receiver, '__func__'):
-                ref = weakref.WeakMethod
+                ref = WeakMethod
                 receiver_object = receiver.__self__
-            receiver = ref(receiver)
-            weakref.finalize(receiver_object, self._remove_receiver)
+            if six.PY3:
+                receiver = ref(receiver)
+                weakref.finalize(receiver_object, self._remove_receiver)
+            else:
+                receiver = ref(receiver, self._remove_receiver)
 
         with self.lock:
             self._clear_dead_receivers()
@@ -228,10 +249,13 @@ class Signal:
                 arguments must be a subset of the argument names defined in
                 providing_args.
 
-        Return a list of tuple pairs [(receiver, response), ... ].
+        Return a list of tuple pairs [(receiver, response), ... ]. May raise
+        DispatcherKeyError.
 
         If any receiver raises an error (specifically any subclass of
-        Exception), return the error instance as the result for that receiver.
+        Exception), the error instance is returned as the result for that
+        receiver. The traceback is always attached to the error at
+        ``__traceback__``.
         """
         if not self.receivers or self.sender_receivers_cache.get(sender) is NO_RECEIVERS:
             return []
@@ -243,6 +267,8 @@ class Signal:
             try:
                 response = receiver(signal=self, sender=sender, **named)
             except Exception as err:
+                if not hasattr(err, '__traceback__'):
+                    err.__traceback__ = sys.exc_info()[2]
                 responses.append((receiver, err))
             else:
                 responses.append((receiver, response))
@@ -339,8 +365,9 @@ def __test():
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)-8s %(message)s')
 
     pizza_done = Signal(providing_args=["toppings", "size"])
+    logging.debug('Signal: pizza_done: %r', pizza_done)
 
-    class PizzaStore:
+    class PizzaStore(object):
         def send_pizza(self, toppings, size):
             logging.info('%s.send_pizza: toppings %r, size %r', self.__class__.__name__, toppings, size)
             pizza_done.send(sender=self.__class__, toppings=toppings, size=size)
