@@ -2,6 +2,7 @@
 
 from __future__ import absolute_import, print_function
 
+import hashlib
 import time
 import uuid
 from hashlib import md5
@@ -18,12 +19,37 @@ def gen_md5(s):
     return m.hexdigest()
 
 
+def checksum(filepath, hash_type='md5'):
+    """
+
+    Args:
+        filepath:
+        hash_type: str, support 'md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512'
+
+    Returns:
+        str
+    """
+    _size = 4096
+
+    with open(filepath, 'rb') as fp:
+        m = getattr(hashlib, hash_type)()
+        data = fp.read(_size)
+        while data:
+            m.update(data)
+            data = fp.read(_size)
+        return m.hexdigest()
+
+
 def gen_id():
     s = str(uuid.uuid3(uuid.uuid1(), gen_md5(time.ctime().encode('ascii')))).replace('-', '')
     return '%s_%s' % (time_str_simplified(), s)
 
 
 def __test():
+    for hash_type in ('md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512'):
+        print('%6s' % hash_type, checksum('/etc/hosts', hash_type))
+    print()
+
     cases = 1, 'abc', b'abc', '国际共产主义', b'AlphaGo',
     for case in cases:
         try:
