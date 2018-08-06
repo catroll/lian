@@ -6,13 +6,15 @@ import datetime
 import time
 
 DEFAULT_DATE = '%Y/%m/%d'
-DEFAULT_TIME = '%H/%M/%S'
+DEFAULT_TIME = '%H:%M:%S'
 DEFAULT_DATETIME = DEFAULT_DATE + ' ' + DEFAULT_TIME
 
 
-def time_str(dt, fmt=DEFAULT_DATETIME):
+def time_str(dt=None, fmt=None):
     if not dt:
         dt = datetime.datetime.now()
+    if not fmt:
+        fmt = DEFAULT_DATETIME
     return dt.strftime(fmt)
 
 
@@ -52,6 +54,18 @@ def get_timestamp_us(keep_int=False):
     if keep_int:
         ts = int(ts)
     return ts
+
+
+def dt2stamp(dt):
+    return time.mktime(dt.timetuple()) + dt.microsecond / 1000000
+
+
+def stamp2dt(stamp):
+    return datetime.datetime.fromtimestamp(stamp)
+
+
+def stamp2str(stamp, fmt=None):
+    return time_str(stamp2dt(stamp), fmt=fmt)
 
 
 def __test():
