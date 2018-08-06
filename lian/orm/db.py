@@ -156,6 +156,7 @@ def _execute(sql, need_return=False, auto_commit=False):
             'description': cur.description,
             'lastrowid': cur.lastrowid,
         })
+        # pool.logger.debug(result)
         return result
     except Exception as e:
         pool.logger.exception(e)
@@ -173,7 +174,7 @@ def execute(sql, auto_commit=False):
     return _execute(sql, need_return=False, auto_commit=auto_commit)
 
 
-def query(sql, auto_commit=False):
+def query(sql, auto_commit=True):
     return _execute(sql, need_return=True, auto_commit=auto_commit)
 
 
