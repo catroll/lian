@@ -932,3 +932,32 @@ ArgumentParser.parse_known = ArgumentParser.parse_known_args
 RawFormatter = RawDescriptionHelpFormatter
 DefaultsFormatter = ArgumentDefaultsHelpFormatter
 DefaultsRawFormatter = ArgumentDefaultsRawHelpFormatter
+
+
+def simplify(config_files, arguments, debug=False):
+    """simplify operation
+
+    Args:
+        config_files:
+        arguments:
+        debug:
+
+    Returns:
+
+    """
+    assert isinstance(config_files, list)
+    assert isinstance(arguments, list)
+    p = ArgParser(default_config_files=config_files)
+    for argument in arguments:
+        assert isinstance(argument, tuple)
+        args, kwargs = argument
+        assert isinstance(args, tuple) and isinstance(kwargs, dict)
+        p.add_argument(*args, **kwargs)
+
+    options = p.parse_args()
+    # print(p.format_help())
+    if debug:
+        six.print_('-' * 80)
+        six.print_(p.format_values())
+        six.print_('-' * 80)
+    return options
