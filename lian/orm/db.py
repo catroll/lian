@@ -224,15 +224,15 @@ class BASE(object):
             raise ObjectNotFound('%s #%s', self.__table__, {key: pk})
         return rows[0]
 
-    def select(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None):
-        if not self.__table__:
-            raise NotImplementedError
+    def _select_sql(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None,
+                    raw_conditions=None):
 
         if not fields:
             fields = self.__fields__ or None
 
         fields_str = _fields_sql(fields, select_mode=True) or '*'
-        sql = 'SELECT %s FROM `%s` WHERE %s' % (fields_str, self.__table__, make_tree(conditions))
+        conditions_sql = raw_conditions or make_tree(conditions)
+        sql = 'SELECT %s FROM `%s` WHERE %s' % (fields_str, self.__table__, conditions_sql)
 
         if isinstance(group_by, (tuple, list, str)) and group_by:
             if isinstance(group_by, str):
@@ -262,6 +262,14 @@ class BASE(object):
         if isinstance(offset, int):
             sql += ' OFFSET %d' % offset
 
+        return sql
+
+    def select(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None,
+               raw_sql=None, raw_conditions=None):
+        if not self.__table__:
+            raise NotImplementedError
+
+        sql = raw_sql or self._select_sql(fields, conditions, limit, offset, order_by, group_by, raw_conditions)
         result = query(sql)
         return result['rows'] if result else []
 
