@@ -235,7 +235,7 @@ class BASE(object):
             key = self.__pk__
         rows = self.select(conditions={key: pk})
         if not rows:
-            raise ObjectNotFound('%s #%s', self.__table__, {key: pk})
+            raise ObjectNotFound('%s #%s' % (self.__table__, pk))
         return rows[0]
 
     def _select_sql(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None,
