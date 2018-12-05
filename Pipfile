@@ -1,0 +1,20 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+tornado = "*"
+redis = "*"
+pika = "*"
+motor = "*"
+bson = "*"
+PyMySQL = "*"
+
+[dev-packages]
+ipython = "*"
+pylint = "*"
+"autopep8" = "*"
+
+[requires]
+python_version = "3.6"
