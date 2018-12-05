@@ -1,0 +1,3 @@
+ipython
+pylint
+autopep8
