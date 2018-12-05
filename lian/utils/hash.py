@@ -31,13 +31,15 @@ def checksum(filepath, hash_type='md5'):
     """
     _size = 4096
 
+    m = getattr(hashlib, hash_type)()
     with open(filepath, 'rb') as fp:
-        m = getattr(hashlib, hash_type)()
-        data = fp.read(_size)
-        while data:
-            m.update(data)
-            data = fp.read(_size)
-        return m.hexdigest()
+        # data = fp.read(_size)
+        # while data:
+        #     m.update(data)
+        #     data = fp.read(_size)
+        for chunk in iter(lambda: fp.read(_size), b''):
+            m.update(chunk)
+    return m.hexdigest()
 
 
 def gen_id():
