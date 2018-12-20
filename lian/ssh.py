@@ -6,8 +6,8 @@ import time
 
 import paramiko
 
-from lian import fs
-from lian import random_string
+from lian.utils import fs
+from lian.utils import random_string
 
 LOG = logging.getLogger(__name__)
 
@@ -174,7 +174,7 @@ class SSHConnection(object):
 
     def download(self, remote_path, local_path):
         try:
-            fs.mkdir_p(os.path.dirname(local_path))
+            fs.mkdir(os.path.dirname(local_path), exist_ok=True)
             LOG.debug('[%s] Download %s to %s', self.alias, remote_path, local_path)
             self.sftp.get(remote_path, local_path)
         except Exception as error:
