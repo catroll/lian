@@ -6,6 +6,17 @@ import os
 import six
 
 
+# def mkdir_p(path):
+#     try:
+#         os.makedirs(path)
+#     # Python >2.5 (except OSError, exc: for Python <2.5)
+#     except OSError as exc:
+#         if exc.errno == errno.EEXIST and os.path.isdir(path):
+#             pass
+#         else:
+#             raise
+
+
 def mkdir(path, mode=0o777, exist_ok=False):
     if six.PY2:
         try:
