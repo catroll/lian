@@ -20,49 +20,38 @@ server_public_key=None
 from __future__ import absolute_import, print_function
 
 import copy
+import logging
 import re
 import threading
 import time
 
 import pymysql
+from six.moves.queue import Queue
 
 from lian.orm.sql import escaped_str, escaped_var, make_tree
+from lian.utils.naming import camel2underline
 
+DEFAULT_DB = 'default'
+DEFAULT_CONNECTIONS = 5
 DEFAULT_CONFIG = {
     'host': 'localhost',
     'user': 'root',
     'charset': 'utf8mb4',
     'cursorclass': pymysql.cursors.DictCursor,
+    'MaxConnections': DEFAULT_CONNECTIONS,
 }
-
-
-def is_configured():
-    return ConnectionPool.config is not None and ConnectionPool.logger is not None
-
-
-def init(config, logger):
-    if is_configured():
-        raise Exception('ConnectionPool inited already')
-    assert isinstance(config, dict)
-    _config = copy.deepcopy(DEFAULT_CONFIG)
-    _config.update(config)
-    ConnectionPool.config = _config
-    ConnectionPool.logger = logger
-
-
-def check_configured():
-    if not is_configured():
-        raise Exception('ConnectionPool need initialize')
+LOG = logging.getLogger(__name__)
 
 
 class PooledConnection(object):
-    def __init__(self, pool, connection):
+    def __init__(self, pool, db, connection):
         self._connection = connection
+        self._db = db
         self._pool = pool
 
     def close(self):
         if self._connection is not None:
-            self._pool.return_connection(self._connection)
+            self._pool.return_connection(self._connection, self._db)
             self._connection = None
 
     def __getattr__(self, name):
@@ -73,38 +62,73 @@ class PooledConnection(object):
         self.close()
 
 
+def init(config):
+    ConnectionPool.init(config)
+
+
 class ConnectionPool(object):
     _instance_lock = threading.Lock()
-    config = None
-    logger = None
+    _config = {}
+    _queues = {}
+    _logger = None
 
-    def __init__(self, max_connections=5):
-        from six.moves.queue import Queue
-        self._queue = Queue(max_connections)  # create the queue
+    @classmethod
+    def init(cls, config):
+        if cls.is_inited():
+            raise Exception('ConnectionPool inited already')
+        assert isinstance(config, dict)
+        for db, db_config in config.items():
+            assert isinstance(db, str)
+            assert isinstance(db_config, dict)
+            db_config.update({k: copy.deepcopy(v) for k, v in DEFAULT_CONFIG.items() if k not in db_config})
+            if 'database' not in db_config and 'db' not in db_config:
+                db_config['database'] = db
+        cls._config = config
 
-        for i in range(0, max_connections):
-            conn = self.get_conn()
-            self._queue.put(conn)
+    @classmethod
+    def is_inited(cls):
+        return cls._config != {}
 
-    @staticmethod
-    def instance(max_connections=5):
-        check_configured()
-        if not hasattr(ConnectionPool, '_instance'):
-            with ConnectionPool._instance_lock:
-                if not hasattr(ConnectionPool, '_instance'):
-                    ConnectionPool._instance = ConnectionPool(max_connections)
-        return ConnectionPool._instance
+    @classmethod
+    def ensure_inited(cls):
+        if not cls.is_inited():
+            raise Exception('ConnectionPool need initialize')
 
-    def get_conn(self):
-        check_configured()
+    @classmethod
+    def set_logger(cls, logger):
+        cls._logger = logger
 
-        _config = copy.deepcopy(self.config)
+    def __init__(self):
+        self.ensure_inited()
+        for db in self._config:
+            db_config = self._config[db]
+            self.logger = db_config.pop('Logger', self._logger or LOG)
+            assert isinstance(self.logger, logging.Logger), 'param logger of db config error: %r' % self.logger
+            _max_connections = db_config.pop('MaxConnections', DEFAULT_CONNECTIONS)
+            self._queues[db] = Queue(_max_connections)  # create the queue
+            for _ in range(_max_connections):
+                conn = self.get_conn(db)
+                self._queues[db].put(conn)
+
+    @classmethod
+    def instance(cls):
+        cls.ensure_inited()
+        if not hasattr(cls, '_instance'):
+            with cls._instance_lock:
+                if not hasattr(cls, '_instance'):
+                    cls._instance = cls()
+        return cls._instance
+
+    def get_conn(self, db=DEFAULT_DB):
+        self.ensure_inited()
+
+        _config = copy.deepcopy(self._config[db])
         _config['passwd'] = '*' * 6
         self.logger.debug('connecting database: %r', _config)
 
         while True:
             try:
-                conn = pymysql.connect(**self.config)
+                conn = pymysql.connect(**self._config[db])
                 conn.ping()
                 break
             except Exception as e:
@@ -113,22 +137,22 @@ class ConnectionPool(object):
         self.logger.info('database connected')
         return conn
 
-    def connection(self):
-        check_configured()
-        conn = self._queue.get()
+    def connection(self, db=DEFAULT_DB):
+        self.ensure_inited()
+        conn = self._queues[db].get()
         try:
             conn.ping()
         except Exception as e:
             self.logger.exception(e)
-            conn = self.get_conn()
-        return PooledConnection(self, conn)
+            conn = self.get_conn(db)
+        return PooledConnection(self, db, conn)
 
-    def return_connection(self, conn):
-        check_configured()
-        self._queue.put(conn)
+    def return_connection(self, conn, db=DEFAULT_DB):
+        self.ensure_inited()
+        self._queues[db].put(conn)
 
 
-def _execute(sql, need_return=False, auto_commit=False):
+def _execute(sql, need_return=False, auto_commit=False, db=DEFAULT_DB):
     """Execute SQL
 
     :param sql:
@@ -138,7 +162,7 @@ def _execute(sql, need_return=False, auto_commit=False):
     """
     cur = None
     pool = ConnectionPool.instance()
-    conn = pool.connection()
+    conn = pool.connection(db)
     started_at = time.time()
     try:
         cur = conn.cursor()
@@ -152,6 +176,7 @@ def _execute(sql, need_return=False, auto_commit=False):
             result = {'rows': None}
 
         result.update({
+            'conn': conn,
             'rowcount': rowcount,
             'description': cur.description,
             'lastrowid': cur.lastrowid,
@@ -170,12 +195,12 @@ def _execute(sql, need_return=False, auto_commit=False):
             cur.close()
 
 
-def execute(sql, auto_commit=False):
-    return _execute(sql, need_return=False, auto_commit=auto_commit)
+def execute(sql, auto_commit=False, db=DEFAULT_DB):
+    return _execute(sql, need_return=False, auto_commit=auto_commit, db=db)
 
 
-def query(sql, auto_commit=True):
-    return _execute(sql, need_return=True, auto_commit=auto_commit)
+def query(sql, auto_commit=True, db=DEFAULT_DB):
+    return _execute(sql, need_return=True, auto_commit=auto_commit, db=db)
 
 
 class ObjectNotFound(Exception):
@@ -226,16 +251,25 @@ def _fields_sql(fields, select_mode=False):
 
 
 class BASE(object):
+    __database__ = DEFAULT_DB
     __table__ = ''
     __pk__ = 'id'
     __fields__ = tuple()
+
+    @property
+    def table_name(self):
+        if self.__class__ is BASE:
+            raise NotImplementedError
+        if self.__table__:
+            return self.__table__
+        return camel2underline(self.__class__.__name__)
 
     def get(self, pk, key=None):
         if not key:
             key = self.__pk__
         rows = self.select(conditions={key: pk})
         if not rows:
-            raise ObjectNotFound('%s #%s' % (self.__table__, pk))
+            raise ObjectNotFound('%s #%s' % (self.table_name, pk))
         return rows[0]
 
     def _select_sql(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None,
@@ -246,7 +280,7 @@ class BASE(object):
 
         fields_str = _fields_sql(fields, select_mode=True) or '*'
         conditions_sql = raw_conditions or make_tree(conditions)
-        sql = 'SELECT %s FROM `%s` WHERE %s' % (fields_str, self.__table__, conditions_sql)
+        sql = 'SELECT %s FROM `%s` WHERE %s' % (fields_str, self.table_name, conditions_sql)
 
         if isinstance(group_by, (tuple, list, str)) and group_by:
             if isinstance(group_by, str):
@@ -280,11 +314,8 @@ class BASE(object):
 
     def select(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None,
                raw_sql=None, raw_conditions=None):
-        if not self.__table__:
-            raise NotImplementedError
-
         sql = raw_sql or self._select_sql(fields, conditions, limit, offset, order_by, group_by, raw_conditions)
-        result = query(sql)
+        result = query(sql, db=self.__database__)
         return result['rows'] if result else []
 
     def insert(self, values, fields=None, update=None):
@@ -297,7 +328,7 @@ class BASE(object):
                 fields = self.__fields__
             assert len(values) == len(fields)
         values_str = ', '.join([escaped_var(val) for val in values])
-        sql = 'INSERT INTO `%s` (%s) VALUES (%s)' % (self.__table__, _fields_sql(fields), values_str)
+        sql = 'INSERT INTO `%s` (%s) VALUES (%s)' % (self.table_name, _fields_sql(fields), values_str)
 
         if update:
             sql += ' ON DUPLICATE KEY UPDATE %s' % _set_sql(update)
@@ -306,11 +337,11 @@ class BASE(object):
         return self.get(result['lastrowid']) if result else None
 
     def update(self, values, conditions=None):
-        sql = 'UPDATE `%s` SET %s WHERE %s' % (self.__table__, _set_sql(values), make_tree(conditions))
+        sql = 'UPDATE `%s` SET %s WHERE %s' % (self.table_name, _set_sql(values), make_tree(conditions))
         result = execute(sql, auto_commit=True)
         return result['rowcount']  # 影响行数
 
     def count(self, conditions=None):
-        sql = 'SELECT COUNT(1) FROM `%s` WHERE %s' % (self.__table__, make_tree(conditions))
-        result = query(sql)
+        sql = 'SELECT COUNT(1) FROM `%s` WHERE %s' % (self.table_name, make_tree(conditions))
+        result = query(sql, db=self.__database__)
         return result['rows'][0]['COUNT(1)'] if result else 0
