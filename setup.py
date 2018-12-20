@@ -17,7 +17,7 @@ setup(
     license='http://www.apache.org/licenses/LICENSE-2.0',
     author='Hu Ang',
     author_email='ninedoors@126.com',
-    url='https://www.sendcloud.com/',
+    url='https://gitee.com/catroll/lian/',
     description='lian is a python toolkit',
     long_description=long_description,
     install_requires=requires,
