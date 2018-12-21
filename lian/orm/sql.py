@@ -11,6 +11,9 @@
 from __future__ import absolute_import, print_function
 
 import pymysql
+import logging
+
+LOG = logging.getLogger(__name__)
 
 
 def escaped_str(_str):
@@ -25,8 +28,6 @@ def escaped_var(_var):
 class SQLNode(object):
     def __init__(self, key, value):
         self.key_orig = key
-        self.value = value
-
         if value is None:
             self.key = key
             self.exp = 'is_null'
@@ -35,9 +36,11 @@ class SQLNode(object):
             parts = key.split('__')
             if len(parts) == 2 and callable(getattr(self, '_exp_' + parts[1], None)):
                 self.key, self.exp = parts
+                self.value = value
             else:
                 self.key = key
-                self.exp = None
+                self.exp = 'in' if isinstance(self.value, (list, tuple, set)) else None
+                self.value = list(value)
 
     @property
     def escaped_value(self):
@@ -106,7 +109,8 @@ class SQLNodeTree(object):
         return '(' + (' %s ' % self.relation).join(str(i) for i in self.nodes) + ')'
 
 
-def make_tree(conditions):
+def make_tree(conditions, logger=LOG):
+    logger.debug('make_tree: %r', conditions)
     if not conditions:
         return SQLNodeTree([])
     assert isinstance(conditions, (tuple, list, dict))

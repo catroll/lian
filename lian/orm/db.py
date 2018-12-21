@@ -310,7 +310,7 @@ def _execute(sql, need_return=False, auto_commit=False, db=DEFAULT_DB):
             if time_cost > 100:
                 conn.logger.warning('Slow SQL: %s, cost: %f', sql, time_cost)
             else:
-                conn.logger.debug('SQL: %s', sql)
+                conn.logger.debug('SQL: %r, cost: %f', sql, time_cost)
             if cur:
                 conn.logger.debug('Close cursor...')
                 cur.close()
@@ -352,10 +352,13 @@ RE_FUNC = re.compile('^(%s):(.+)$' % ('|'.join(FUNCS)))
 
 def _fields_sql(fields, select_mode=False):
     def _sql_func(field):
+        LOG.debug(field)
         _re_func_result = RE_FUNC.search(field)
         if _re_func_result:
             func, field = _re_func_result.groups()
             return '%s(`%s`)' % (func, escaped_str(field))
+        if field.startswith('*'):
+            return 'DISTINCT `%s`' % field[1:]
         return '`%s`' % field
 
     def _inner(field):
@@ -404,6 +407,11 @@ class BASE(object):
     def sql_table_name(self):
         return '`%s`.`%s`' % (self.database_name, self.table_name)
 
+    @property
+    def logger(self):
+        pool = ConnectionPool.instance()
+        return pool.get_logger(self.database_name)
+
     def get(self, pk, key=None):
         if not key:
             key = self.__pk__
@@ -419,7 +427,7 @@ class BASE(object):
             fields = self.__fields__ or None
 
         fields_str = _fields_sql(fields, select_mode=True) or '*'
-        conditions_sql = raw_conditions or make_tree(conditions)
+        conditions_sql = raw_conditions or make_tree(conditions, self.logger)
         sql = 'SELECT %s FROM %s WHERE %s' % (fields_str, self.sql_table_name, conditions_sql)
 
         if isinstance(group_by, (tuple, list, str)) and group_by:
@@ -477,11 +485,11 @@ class BASE(object):
         return self.get(result['lastrowid']) if result else None
 
     def update(self, values, conditions=None):
-        sql = 'UPDATE %s SET %s WHERE %s' % (self.sql_table_name, _set_sql(values), make_tree(conditions))
+        sql = 'UPDATE %s SET %s WHERE %s' % (self.sql_table_name, _set_sql(values), make_tree(conditions, self.logger))
         result = execute(sql, auto_commit=True, db=self.__database__)
         return result['rowcount']  # 影响行数
 
     def count(self, conditions=None):
-        sql = 'SELECT COUNT(1) FROM %s WHERE %s' % (self.sql_table_name, make_tree(conditions))
+        sql = 'SELECT COUNT(1) FROM %s WHERE %s' % (self.sql_table_name, make_tree(conditions, self.logger))
         result = query(sql, db=self.__database__)
         return result['rows'][0]['COUNT(1)'] if result else 0
