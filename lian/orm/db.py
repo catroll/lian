@@ -76,6 +76,7 @@ class ConnectionPool(object):
     def init(cls, config):
         if cls.is_inited():
             raise Exception('ConnectionPool inited already')
+
         assert isinstance(config, dict)
         for db, db_config in config.items():
             assert isinstance(db, str)
@@ -83,6 +84,12 @@ class ConnectionPool(object):
             db_config.update({k: copy.deepcopy(v) for k, v in DEFAULT_CONFIG.items() if k not in db_config})
             if 'database' not in db_config and 'db' not in db_config:
                 db_config['database'] = db
+
+        if DEFAULT_DB not in config:
+            first_db = next(iter(config.keys()))
+            LOG.info('The database config has not DEFAULT_DB, choose %s as default database', first_db)
+            config[DEFAULT_DB] = config[first_db]
+
         cls._config = config
 
     @classmethod
@@ -97,6 +104,10 @@ class ConnectionPool(object):
     @classmethod
     def set_logger(cls, logger):
         cls._logger = logger
+
+    @classmethod
+    def get_config(cls, db=DEFAULT_DB):
+        return cls._config[db]
 
     def __init__(self):
         self.ensure_inited()
@@ -264,12 +275,30 @@ class BASE(object):
             return self.__table__
         return camel2underline(self.__class__.__name__)
 
+    @property
+    def database_name(self):
+        if self.__database__ == DEFAULT_DB:
+            config = ConnectionPool.get_config(db=DEFAULT_DB)
+            name = config.get('database', None) or config.get('db', None)
+            if name is None:
+                raise Exception('model %s has not specified database!' % self.__class__.__name__)
+            return name
+        return self.__database__
+
+    @property
+    def full_table_name(self):
+        return '%s.%s' % (self.database_name, self.table_name)
+
+    @property
+    def sql_table_name(self):
+        return '`%s`.`%s`' % (self.database_name, self.table_name)
+
     def get(self, pk, key=None):
         if not key:
             key = self.__pk__
         rows = self.select(conditions={key: pk})
         if not rows:
-            raise ObjectNotFound('%s #%s' % (self.table_name, pk))
+            raise ObjectNotFound('%s #%s' % (self.full_table_name, pk))
         return rows[0]
 
     def _select_sql(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None,
@@ -280,7 +309,7 @@ class BASE(object):
 
         fields_str = _fields_sql(fields, select_mode=True) or '*'
         conditions_sql = raw_conditions or make_tree(conditions)
-        sql = 'SELECT %s FROM `%s` WHERE %s' % (fields_str, self.table_name, conditions_sql)
+        sql = 'SELECT %s FROM %s WHERE %s' % (fields_str, self.sql_table_name, conditions_sql)
 
         if isinstance(group_by, (tuple, list, str)) and group_by:
             if isinstance(group_by, str):
@@ -328,20 +357,20 @@ class BASE(object):
                 fields = self.__fields__
             assert len(values) == len(fields)
         values_str = ', '.join([escaped_var(val) for val in values])
-        sql = 'INSERT INTO `%s` (%s) VALUES (%s)' % (self.table_name, _fields_sql(fields), values_str)
+        sql = 'INSERT INTO %s (%s) VALUES (%s)' % (self.sql_table_name, _fields_sql(fields), values_str)
 
         if update:
             sql += ' ON DUPLICATE KEY UPDATE %s' % _set_sql(update)
 
-        result = execute(sql, auto_commit=True)
+        result = execute(sql, auto_commit=True, db=self.__database__)
         return self.get(result['lastrowid']) if result else None
 
     def update(self, values, conditions=None):
-        sql = 'UPDATE `%s` SET %s WHERE %s' % (self.table_name, _set_sql(values), make_tree(conditions))
-        result = execute(sql, auto_commit=True)
+        sql = 'UPDATE %s SET %s WHERE %s' % (self.sql_table_name, _set_sql(values), make_tree(conditions))
+        result = execute(sql, auto_commit=True, db=self.__database__)
         return result['rowcount']  # 影响行数
 
     def count(self, conditions=None):
-        sql = 'SELECT COUNT(1) FROM `%s` WHERE %s' % (self.table_name, make_tree(conditions))
+        sql = 'SELECT COUNT(1) FROM %s WHERE %s' % (self.sql_table_name, make_tree(conditions))
         result = query(sql, db=self.__database__)
         return result['rows'][0]['COUNT(1)'] if result else 0
