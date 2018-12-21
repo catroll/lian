@@ -48,10 +48,12 @@ class PooledConnection(object):
         self._connection = connection
         self._db = db
         self._pool = pool
+        self.logger = pool.get_logger(db)
 
     def close(self):
         if self._connection is not None:
-            self._pool.return_connection(self._connection, self._db)
+            if self._pool.is_connection_using(self._connection, self._db):
+                self._pool.release(self._connection, self._db)
             self._connection = None
 
     def __getattr__(self, name):
@@ -70,6 +72,8 @@ class ConnectionPool(object):
     _instance_lock = threading.Lock()
     _config = {}
     _queues = {}
+    _queues_using = {}
+    _loggers = {}
     _logger = None
 
     @classmethod
@@ -109,17 +113,51 @@ class ConnectionPool(object):
     def get_config(cls, db=DEFAULT_DB):
         return cls._config[db]
 
+    @classmethod
+    def get_logger(cls, db=DEFAULT_DB):
+        return cls._loggers.get(db, cls._logger)
+
     def __init__(self):
         self.ensure_inited()
+        self.logger = self._logger or LOG
         for db in self._config:
             db_config = self._config[db]
-            self.logger = db_config.pop('Logger', self._logger or LOG)
-            assert isinstance(self.logger, logging.Logger), 'param logger of db config error: %r' % self.logger
+
+            logger = db_config.pop('Logger', self.logger)
+            assert isinstance(logger, logging.Logger), 'param logger of db config error: %r' % logger
+            self._loggers[db] = logger
+
             _max_connections = db_config.pop('MaxConnections', DEFAULT_CONNECTIONS)
+            assert isinstance(_max_connections, int) and _max_connections > 0
+
             self._queues[db] = Queue(_max_connections)  # create the queue
-            for _ in range(_max_connections):
-                conn = self.get_conn(db)
-                self._queues[db].put(conn)
+            self._queues_using[db] = []
+
+            self.build_connection(db)  # build a connection
+
+    def get_queue_status(self, db):
+        q = self._queues[db]
+        q_using = self._queues_using[db]
+        return 'queue of %s size: %s + %s / %s' % (db, q.qsize(), len(q_using), q.maxsize)
+
+    def is_connection_using(self, conn, db=None):
+        if db is None:
+            return any((self.is_connection_using(conn, db) for db in self._config))
+        id_conn = id(conn)
+        q_using = self._queues_using[db]
+        self.logger.debug('is_connection_using(%s): %r in %r', db, id_conn, q_using)
+        return id_conn in q_using
+
+    def build_connection(self, db):
+        q = self._queues[db]
+        q_using = self._queues_using[db]
+        if q.qsize() + len(q_using) >= q.maxsize:
+            return
+
+        self.logger.debug('build connection at %s', db)
+        conn = self.connect(db)
+        q.put(conn)
+        self.logger.debug('after build connection, %s', self.get_queue_status(db))
 
     @classmethod
     def instance(cls):
@@ -130,7 +168,7 @@ class ConnectionPool(object):
                     cls._instance = cls()
         return cls._instance
 
-    def get_conn(self, db=DEFAULT_DB):
+    def connect(self, db=DEFAULT_DB):
         self.ensure_inited()
 
         _config = copy.deepcopy(self._config[db])
@@ -140,6 +178,7 @@ class ConnectionPool(object):
         while True:
             try:
                 conn = pymysql.connect(**self._config[db])
+                LOG.debug('ping...')
                 conn.ping()
                 break
             except Exception as e:
@@ -148,19 +187,75 @@ class ConnectionPool(object):
         self.logger.info('database connected')
         return conn
 
-    def connection(self, db=DEFAULT_DB):
+    def acquire(self, db=DEFAULT_DB):
         self.ensure_inited()
-        conn = self._queues[db].get()
-        try:
-            conn.ping()
-        except Exception as e:
-            self.logger.exception(e)
-            conn = self.get_conn(db)
-        return PooledConnection(self, db, conn)
 
-    def return_connection(self, conn, db=DEFAULT_DB):
+        q = self._queues[db]
+        q_using = self._queues_using[db]
+        self.logger.debug('acquire connection at %s', db)
+        if q.empty():
+            self.build_connection(db)
+
+        while True:
+            conn = q.get()
+
+            conn_error = False
+            try:
+                LOG.debug('ping...')
+                conn.ping()
+                break
+            except Exception as e:
+                self.logger.exception(e)
+                conn_error = True
+
+            if conn_error:
+                self.logger.warning('Connection error, try to close it...')
+                try:
+                    conn.close()
+                except Exception as conn_close_error:
+                    self.logger.exception(conn_close_error)
+                self.build_connection(db)
+
+        q_using.append(id(conn))
+        self.logger.debug('after acquire connection, %s', self.get_queue_status(db))
+        return conn
+
+    def release(self, conn, db=DEFAULT_DB):
+        # import traceback
+        # self.logger.debug('TraceBack:\n' + (''.join(traceback.format_stack())))
+
         self.ensure_inited()
-        self._queues[db].put(conn)
+
+        id_conn = id(conn)
+
+        q = self._queues[db]
+        q_using = self._queues_using[db]
+
+        if not self.is_connection_using(conn, db):
+            self.logger.warning('The connection #%d is not using, ignore release... (using connections: %r)', id_conn, q_using)
+            return
+
+        self.logger.debug('release connection %d at %s', id_conn, db)
+        q.put(conn)
+        q_using.remove(id_conn)
+        self.logger.debug('after release connection, %s', self.get_queue_status(db))
+
+
+class ConnectionContext:
+    def __init__(self, db):
+        self.db = db
+        self.connection = None  # pymysql.Connection
+
+    def __enter__(self):
+        pool = ConnectionPool.instance()
+        self.connection = pool.acquire(self.db)
+        return PooledConnection(pool, self.db, self.connection)
+
+    def __exit__(self, *args):
+        """args: type, value, trace"""
+        pool = ConnectionPool.instance()
+        if pool.is_connection_using(self.connection, self.db):
+            pool.release(self.connection, self.db)
 
 
 def _execute(sql, need_return=False, auto_commit=False, db=DEFAULT_DB):
@@ -171,39 +266,41 @@ def _execute(sql, need_return=False, auto_commit=False, db=DEFAULT_DB):
     :param auto_commit:
     :return:
     """
-    cur = None
-    pool = ConnectionPool.instance()
-    conn = pool.connection(db)
-    started_at = time.time()
-    try:
-        cur = conn.cursor()
-        rowcount = cur.execute(sql)
-        if auto_commit:
-            conn.commit()
+    with ConnectionContext(db) as conn:
+        conn.logger.debug('sql execute start...')
+        cur = None
+        started_at = time.time()
+        try:
+            cur = conn.cursor()
+            rowcount = cur.execute(sql)
+            if auto_commit:
+                conn.commit()
 
-        if need_return:
-            result = {'rows': cur.fetchall()}
-        else:
-            result = {'rows': None}
+            if need_return:
+                result = {'rows': cur.fetchall()}
+            else:
+                result = {'rows': None}
 
-        result.update({
-            'conn': conn,
-            'rowcount': rowcount,
-            'description': cur.description,
-            'lastrowid': cur.lastrowid,
-        })
-        # pool.logger.debug(result)
-        return result
-    except Exception as e:
-        pool.logger.exception(e)
-    finally:
-        time_cost = time.time() - started_at
-        if time_cost > 100:
-            pool.logger.warning('Slow SQL: %s, cost: %f', sql, time_cost)
-        else:
-            pool.logger.debug('SQL: %s', sql)
-        if cur:
-            cur.close()
+            result.update({
+                'conn': conn,
+                'rowcount': rowcount,
+                'description': cur.description,
+                'lastrowid': cur.lastrowid,
+            })
+            # conn.logger.debug(result)
+            return result
+        except Exception as e:
+            conn.logger.exception(e)
+        finally:
+            time_cost = time.time() - started_at
+            if time_cost > 100:
+                conn.logger.warning('Slow SQL: %s, cost: %f', sql, time_cost)
+            else:
+                conn.logger.debug('SQL: %s', sql)
+            if cur:
+                conn.logger.debug('Close cursor...')
+                cur.close()
+            conn.logger.debug('sql execute over...')
 
 
 def execute(sql, auto_commit=False, db=DEFAULT_DB):
