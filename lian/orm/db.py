@@ -70,11 +70,10 @@ def init(config):
 
 class ConnectionPool(object):
     _instance_lock = threading.Lock()
+
     _config = {}
-    _queues = {}
-    _queues_using = {}
-    _loggers = {}
     _logger = None
+    _default_db = DEFAULT_DB
 
     @classmethod
     def init(cls, config):
@@ -89,10 +88,9 @@ class ConnectionPool(object):
             if 'database' not in db_config and 'db' not in db_config:
                 db_config['database'] = db
 
-        if DEFAULT_DB not in config:
-            first_db = next(iter(config.keys()))
-            LOG.info('The database config has not DEFAULT_DB, choose %s as default database', first_db)
-            config[DEFAULT_DB] = config[first_db]
+        if cls._default_db not in config:
+            cls._default_db = next(iter(config.keys()))
+            LOG.info('The database config has not DEFAULT_DB, choose %s as default database', cls._default_db)
 
         cls._config = config
 
@@ -106,22 +104,38 @@ class ConnectionPool(object):
             raise Exception('ConnectionPool need initialize')
 
     @classmethod
+    def real_db(cls, db=None):
+        if not db or db == DEFAULT_DB:
+            db = cls._default_db
+        return db
+
+    @classmethod
     def set_logger(cls, logger):
         cls._logger = logger
 
     @classmethod
-    def get_config(cls, db=DEFAULT_DB):
-        return cls._config[db]
+    def get_config(cls, db=None):
+        return cls._config[cls.real_db(db)]
 
-    @classmethod
-    def get_logger(cls, db=DEFAULT_DB):
-        return cls._loggers.get(db, cls._logger)
+    def get_logger(self, db=None):
+        return self._loggers.get(self.real_db(db), self._logger)
+
+    def get_queue(self, db=None):
+        return self._queues[self.real_db(db)]
+
+    def get_queue_using(self, db=None):
+        return self._queues_using[self.real_db(db)]
 
     def __init__(self):
         self.ensure_inited()
         self.logger = self._logger or LOG
+
+        self._queues = {}
+        self._queues_using = {}
+        self._loggers = {}
+
         for db in self._config:
-            db_config = self._config[db]
+            db_config = self.get_config(db)
 
             logger = db_config.pop('Logger', self.logger)
             assert isinstance(logger, logging.Logger), 'param logger of db config error: %r' % logger
@@ -136,21 +150,21 @@ class ConnectionPool(object):
             self.build_connection(db)  # build a connection
 
     def get_queue_status(self, db):
-        q = self._queues[db]
-        q_using = self._queues_using[db]
+        q = self.get_queue(db)
+        q_using = self.get_queue_using(db)
         return 'queue of %s size: %s + %s / %s' % (db, q.qsize(), len(q_using), q.maxsize)
 
     def is_connection_using(self, conn, db=None):
         if db is None:
             return any((self.is_connection_using(conn, db) for db in self._config))
         id_conn = id(conn)
-        q_using = self._queues_using[db]
+        q_using = self.get_queue_using(db)
         self.logger.debug('is_connection_using(%s): %r in %r', db, id_conn, q_using)
         return id_conn in q_using
 
     def build_connection(self, db):
-        q = self._queues[db]
-        q_using = self._queues_using[db]
+        q = self.get_queue(db)
+        q_using = self.get_queue_using(db)
         if q.qsize() + len(q_using) >= q.maxsize:
             return
 
@@ -171,13 +185,13 @@ class ConnectionPool(object):
     def connect(self, db=DEFAULT_DB):
         self.ensure_inited()
 
-        _config = copy.deepcopy(self._config[db])
+        _config = copy.deepcopy(self.get_config(db))
         _config['passwd'] = '*' * 6
         self.logger.debug('connecting database: %r', _config)
 
         while True:
             try:
-                conn = pymysql.connect(**self._config[db])
+                conn = pymysql.connect(**self.get_config(db))
                 LOG.debug('ping...')
                 conn.ping()
                 break
@@ -190,8 +204,8 @@ class ConnectionPool(object):
     def acquire(self, db=DEFAULT_DB):
         self.ensure_inited()
 
-        q = self._queues[db]
-        q_using = self._queues_using[db]
+        q = self.get_queue(db)
+        q_using = self.get_queue_using(db)
         self.logger.debug('acquire connection at %s', db)
         if q.empty():
             self.build_connection(db)
@@ -228,8 +242,8 @@ class ConnectionPool(object):
 
         id_conn = id(conn)
 
-        q = self._queues[db]
-        q_using = self._queues_using[db]
+        q = self.get_queue(db)
+        q_using = self.get_queue_using(db)
 
         if not self.is_connection_using(conn, db):
             self.logger.warning('The connection #%d is not using, ignore release... (using connections: %r)', id_conn, q_using)
