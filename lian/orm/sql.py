@@ -39,8 +39,12 @@ class SQLNode(object):
                 self.value = value
             else:
                 self.key = key
-                self.exp = 'in' if isinstance(self.value, (list, tuple, set)) else None
-                self.value = list(value)
+                if isinstance(value, (list, tuple, set)):
+                    self.exp = 'in'
+                    self.value = list(value)
+                else:
+                    self.exp = None
+                    self.value = value
 
     @property
     def escaped_value(self):
