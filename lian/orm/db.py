@@ -246,7 +246,8 @@ class ConnectionPool(object):
         q_using = self.get_queue_using(db)
 
         if not self.is_connection_using(conn, db):
-            self.logger.warning('The connection #%d is not using, ignore release... (using connections: %r)', id_conn, q_using)
+            self.logger.warning('The connection #%d is not using, ignore release... (using connections: %r)', id_conn,
+                                q_using)
             return
 
         self.logger.debug('release connection %d at %s', id_conn, db)
@@ -466,7 +467,7 @@ class BASE(object):
         result = query(sql, db=self.__database__)
         return result['rows'] if result else []
 
-    def insert(self, values, fields=None, update=None):
+    def insert(self, values, fields=None, update=None, replace_mode=False):
         assert isinstance(values, (dict, list, tuple))
         if isinstance(values, dict):
             fields = list(values.keys())
@@ -476,10 +477,13 @@ class BASE(object):
                 fields = self.__fields__
             assert len(values) == len(fields)
         values_str = ', '.join([escaped_var(val) for val in values])
-        sql = 'INSERT INTO %s (%s) VALUES (%s)' % (self.sql_table_name, _fields_sql(fields), values_str)
 
-        if update:
-            sql += ' ON DUPLICATE KEY UPDATE %s' % _set_sql(update)
+        if replace_mode:
+            sql = 'REPLACE INTO %s (%s) VALUES (%s)' % (self.sql_table_name, _fields_sql(fields), values_str)
+        else:
+            sql = 'INSERT INTO %s (%s) VALUES (%s)' % (self.sql_table_name, _fields_sql(fields), values_str)
+            if update:
+                sql += ' ON DUPLICATE KEY UPDATE %s' % _set_sql(update)
 
         result = execute(sql, auto_commit=True, db=self.__database__)
         return self.get(result['lastrowid']) if result else None
