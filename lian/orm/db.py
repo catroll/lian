@@ -467,6 +467,14 @@ class BASE(object):
         result = query(sql, db=self.__database__)
         return result['rows'] if result else []
 
+    def find(self, fields=None, conditions=None, offset=None, order_by=None, raw_sql=None, raw_conditions=None):
+        count = self.count(conditions=conditions)
+        if count == 0:
+            return None
+        rows = self.select(fields, conditions, limit=1, offset=offset, order_by=order_by,
+                           raw_sql=raw_sql, raw_conditions=raw_conditions)
+        return rows[0]
+
     def insert(self, values, fields=None, update=None, replace_mode=False):
         assert isinstance(values, (dict, list, tuple))
         if isinstance(values, dict):
