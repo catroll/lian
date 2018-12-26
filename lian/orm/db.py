@@ -392,13 +392,12 @@ class BASE(object):
 
     @property
     def database_name(self):
-        if self.__database__ == DEFAULT_DB:
-            config = ConnectionPool.get_config(db=DEFAULT_DB)
-            name = config.get('database', None) or config.get('db', None)
-            if name is None:
-                raise Exception('model %s has not specified database!' % self.__class__.__name__)
-            return name
-        return self.__database__
+        # 获取真实的数据库名称
+        config = ConnectionPool.get_config(db=self.__database__)
+        name = config.get('database', None) or config.get('db', None)
+        if name is None:
+            raise Exception('model %s has not specified database!' % self.__class__.__name__)
+        return name
 
     @property
     def full_table_name(self):
