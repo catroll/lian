@@ -21,15 +21,13 @@ from __future__ import absolute_import, print_function
 
 import copy
 import logging
-import re
 import threading
 import time
 
 import pymysql
-from six.moves.queue import Queue
-
-from lian.orm.sql import escaped_str, escaped_var, make_tree
+from lian.orm import statement
 from lian.utils.naming import camel2underline
+from six.moves.queue import Queue
 
 DEFAULT_DB = 'default'
 DEFAULT_CONNECTIONS = 5
@@ -329,57 +327,14 @@ class ObjectNotFound(Exception):
     pass
 
 
-SET_OPS = 'ADD',
-RE_SET_OP = re.compile('^(%s):(.+)$' % ('|'.join(SET_OPS)))
-
-
-def _set_sql(values):
-    def _set_v(key, value):
-        _re_op_result = RE_SET_OP.search(key)
-        if _re_op_result:
-            op, new_k = _re_op_result.groups()
-            new_k = escaped_str(new_k)
-            if op == 'ADD':
-                return '`%s` = `%s` + %s' % (new_k, new_k, escaped_var(value))
-        return '`%s` = %s' % (escaped_str(key), escaped_var(value))
-
-    return ', '.join([_set_v(k, v) for k, v in values.items()])
-
-
-FUNCS = 'SUM', 'MAX', 'MIN',
-RE_FUNC = re.compile('^(%s):(.+)$' % ('|'.join(FUNCS)))
-
-
-def _fields_sql(fields, select_mode=False):
-    def _sql_func(field):
-        LOG.debug(field)
-        _re_func_result = RE_FUNC.search(field)
-        if _re_func_result:
-            func, field = _re_func_result.groups()
-            return '%s(`%s`)' % (func, escaped_str(field))
-        if field.startswith('*'):
-            return 'DISTINCT `%s`' % field[1:]
-        return '`%s`' % field
-
-    def _inner(field):
-        if select_mode:
-            if isinstance(field, tuple):
-                assert len(field) == 2 and isinstance(field[0], str) and isinstance(field[1], str)
-                return '%s AS `%s`' % (_sql_func(field[0]), escaped_str(field[1]))
-        return _sql_func(field)
-
-    if isinstance(fields, (tuple, list)) and fields:
-        fields_str = ', '.join([_inner(f) for f in fields])
-        return fields_str
-
-    return None
-
-
 class BASE(object):
     __database__ = DEFAULT_DB
     __table__ = ''
     __pk__ = 'id'
     __fields__ = tuple()
+
+    def __init__(self):
+        self.sql = statement.SQL(self.table_name, database=self.database_name, logger=self.logger)
 
     @property
     def table_name(self):
@@ -403,10 +358,6 @@ class BASE(object):
         return '%s.%s' % (self.database_name, self.table_name)
 
     @property
-    def sql_table_name(self):
-        return '`%s`.`%s`' % (self.database_name, self.table_name)
-
-    @property
     def logger(self):
         pool = ConnectionPool.instance()
         return pool.get_logger(self.database_name)
@@ -419,49 +370,9 @@ class BASE(object):
             raise ObjectNotFound('%s #%s' % (self.full_table_name, pk))
         return rows[0]
 
-    def _select_sql(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None,
-                    raw_conditions=None):
-
-        if not fields:
-            fields = self.__fields__ or None
-
-        fields_str = _fields_sql(fields, select_mode=True) or '*'
-        conditions_sql = raw_conditions or make_tree(conditions, self.logger)
-        sql = 'SELECT %s FROM %s WHERE %s' % (fields_str, self.sql_table_name, conditions_sql)
-
-        if isinstance(group_by, (tuple, list, str)) and group_by:
-            if isinstance(group_by, str):
-                group_by = [group_by]
-            sql += ' GROUP BY ' + (', '.join(['`%s`' % field for field in group_by]))
-
-        if isinstance(order_by, str):
-            order_by = [order_by]
-        elif isinstance(order_by, (tuple, list)):
-            order_by = list(order_by)
-        else:
-            order_by = []
-        _order_by_sql = []
-        for i in order_by:
-            assert isinstance(i, str) and i
-            if i.startswith('-'):
-                i = '`%s` DESC' % escaped_str(i[1:])
-            else:
-                i = '`%s`' % i
-            _order_by_sql.append(i)
-        if _order_by_sql:
-            sql += ' ORDER BY %s' % (', '.join(_order_by_sql))
-
-        if isinstance(limit, int):
-            sql += ' LIMIT %d' % limit
-
-        if isinstance(offset, int):
-            sql += ' OFFSET %d' % offset
-
-        return sql
-
     def select(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None,
                raw_sql=None, raw_conditions=None):
-        sql = raw_sql or self._select_sql(fields, conditions, limit, offset, order_by, group_by, raw_conditions)
+        sql = raw_sql or self.sql.select(fields, conditions, limit, offset, order_by, group_by, raw_conditions)
         result = query(sql, db=self.__database__)
         return result['rows'] if result else []
 
@@ -474,39 +385,23 @@ class BASE(object):
         return rows[0]
 
     def insert(self, values, fields=None, update=None, replace_mode=False):
-        assert isinstance(values, (dict, list, tuple))
-        if isinstance(values, dict):
-            fields = list(values.keys())
-            values = [values[i] for i in fields]
-        else:
-            if not fields:
-                fields = self.__fields__
-            assert len(values) == len(fields)
-        values_str = ', '.join([escaped_var(val) for val in values])
-
-        if replace_mode:
-            sql = 'REPLACE INTO %s (%s) VALUES (%s)' % (self.sql_table_name, _fields_sql(fields), values_str)
-        else:
-            sql = 'INSERT INTO %s (%s) VALUES (%s)' % (self.sql_table_name, _fields_sql(fields), values_str)
-            if update:
-                sql += ' ON DUPLICATE KEY UPDATE %s' % _set_sql(update)
-
+        if not fields:
+            fields = self.__fields__
+        sql = self.sql.insert(values, fields=fields, update=update, replace_mode=replace_mode)
         result = execute(sql, auto_commit=True, db=self.__database__)
         return self.get(result['lastrowid']) if result else None
 
     def update(self, values, conditions=None, raw_conditions=None):
-        conditions_sql = raw_conditions or make_tree(conditions, self.logger)
-        sql = 'UPDATE %s SET %s WHERE %s' % (self.sql_table_name, _set_sql(values), conditions_sql)
+        sql = self.sql.update(values, conditions=conditions, raw_conditions=raw_conditions)
         result = execute(sql, auto_commit=True, db=self.__database__)
         return result['rowcount']  # 影响行数
 
-    def count(self, conditions=None):
-        sql = 'SELECT COUNT(1) FROM %s WHERE %s' % (self.sql_table_name, make_tree(conditions, self.logger))
+    def count(self, conditions=None, raw_conditions=None):
+        sql = self.sql.count(conditions, raw_conditions=raw_conditions)
         result = query(sql, db=self.__database__)
         return result['rows'][0]['COUNT(1)'] if result else 0
 
     def delete(self, conditions=None, raw_conditions=None):
-        conditions_sql = raw_conditions or make_tree(conditions, self.logger)
-        sql = 'DELETE FROM %s WHERE %s' % (self.sql_table_name, conditions_sql)
+        sql = self.sql.delete(conditions, raw_conditions=raw_conditions)
         result = execute(sql, auto_commit=True, db=self.__database__)
         return result['rowcount']  # 影响行数
