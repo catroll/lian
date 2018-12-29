@@ -212,7 +212,6 @@ class ConnectionPool(object):
 
         while True:
             conn = q.get()
-
             conn_error = False
             try:
                 LOG.debug('ping...')
@@ -495,8 +494,9 @@ class BASE(object):
         result = execute(sql, auto_commit=True, db=self.__database__)
         return self.get(result['lastrowid']) if result else None
 
-    def update(self, values, conditions=None):
-        sql = 'UPDATE %s SET %s WHERE %s' % (self.sql_table_name, _set_sql(values), make_tree(conditions, self.logger))
+    def update(self, values, conditions=None, raw_conditions=None):
+        conditions_sql = raw_conditions or make_tree(conditions, self.logger)
+        sql = 'UPDATE %s SET %s WHERE %s' % (self.sql_table_name, _set_sql(values), conditions_sql)
         result = execute(sql, auto_commit=True, db=self.__database__)
         return result['rowcount']  # 影响行数
 
@@ -504,3 +504,9 @@ class BASE(object):
         sql = 'SELECT COUNT(1) FROM %s WHERE %s' % (self.sql_table_name, make_tree(conditions, self.logger))
         result = query(sql, db=self.__database__)
         return result['rows'][0]['COUNT(1)'] if result else 0
+
+    def delete(self, conditions=None, raw_conditions=None):
+        conditions_sql = raw_conditions or make_tree(conditions, self.logger)
+        sql = 'DELETE FROM %s WHERE %s' % (self.sql_table_name, conditions_sql)
+        result = execute(sql, auto_commit=True, db=self.__database__)
+        return result['rowcount']  # 影响行数
