@@ -10,6 +10,7 @@ pika = "*"
 motor = "*"
 bson = "*"
 PyMySQL = "*"
+cached-property = "*"
 
 [dev-packages]
 ipython = "*"
