@@ -75,6 +75,7 @@ class ConnectionPool(object):
 
     @classmethod
     def init(cls, config):
+        LOG.debug('ConnectionPool.init')
         if cls.is_inited():
             raise Exception('ConnectionPool inited already')
 
@@ -127,6 +128,7 @@ class ConnectionPool(object):
     def __init__(self):
         self.ensure_inited()
         self.logger = self._logger or LOG
+        self.logger.info('init')
 
         self._queues = {}
         self._queues_using = {}
@@ -384,12 +386,14 @@ class BASE(object):
                            raw_sql=raw_sql, raw_conditions=raw_conditions)
         return rows[0]
 
-    def insert(self, values, fields=None, update=None, replace_mode=False):
+    def insert(self, values, fields=None, update=None, replace_mode=False, refetch=False):
         if not fields:
             fields = self.__fields__
         sql = self.sql.insert(values, fields=fields, update=update, replace_mode=replace_mode)
         result = execute(sql, auto_commit=True, db=self.__database__)
-        return self.get(result['lastrowid']) if result else None
+        if not result:
+            return None
+        return self.get(result['lastrowid']) if refetch else result['lastrowid']
 
     def update(self, values, conditions=None, raw_conditions=None):
         sql = self.sql.update(values, conditions=conditions, raw_conditions=raw_conditions)
