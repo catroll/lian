@@ -372,40 +372,41 @@ class BASE(object):
             raise ObjectNotFound('%s #%s' % (self.full_table_name, pk))
         return rows[0]
 
-    def select(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None,
-               raw_sql=None, raw_conditions=None):
-        sql = raw_sql or self.sql.select(fields, conditions, limit, offset, order_by, group_by, raw_conditions)
+    def select(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None, raw_sql=None):
+        sql = raw_sql or self.sql.select(fields, conditions, limit, offset, order_by, group_by)
         result = query(sql, db=self.__database__)
         return result['rows'] if result else []
 
-    def find(self, fields=None, conditions=None, offset=None, order_by=None, raw_sql=None, raw_conditions=None):
+    def find(self, fields=None, conditions=None, offset=None, order_by=None, raw_sql=None):
         count = self.count(conditions=conditions)
         if count == 0:
             return None
-        rows = self.select(fields, conditions, limit=1, offset=offset, order_by=order_by,
-                           raw_sql=raw_sql, raw_conditions=raw_conditions)
+        rows = self.select(fields, conditions, limit=1, offset=offset, order_by=order_by, raw_sql=raw_sql)
         return rows[0]
 
-    def insert(self, values, fields=None, update=None, replace_mode=False, refetch=False):
+    def insert(self, values, fields=None, mode='insert',
+               update=None,  # mode = update
+               conditions=None,  # mode = insert-not-exists
+               refetch=False):
         if not fields:
             fields = self.__fields__
-        sql = self.sql.insert(values, fields=fields, update=update, replace_mode=replace_mode)
+        sql = self.sql.insert(values, fields=fields, mode=mode, update=update, conditions=conditions)
         result = execute(sql, auto_commit=True, db=self.__database__)
         if not result:
             return None
         return self.get(result['lastrowid']) if refetch else result['lastrowid']
 
-    def update(self, values, conditions=None, raw_conditions=None):
-        sql = self.sql.update(values, conditions=conditions, raw_conditions=raw_conditions)
+    def update(self, values, conditions=None):
+        sql = self.sql.update(values, conditions=conditions)
         result = execute(sql, auto_commit=True, db=self.__database__)
         return result['rowcount']  # 影响行数
 
-    def count(self, conditions=None, raw_conditions=None):
-        sql = self.sql.count(conditions, raw_conditions=raw_conditions)
+    def count(self, conditions=None):
+        sql = self.sql.count(conditions)
         result = query(sql, db=self.__database__)
         return result['rows'][0]['COUNT(1)'] if result else 0
 
-    def delete(self, conditions=None, raw_conditions=None):
-        sql = self.sql.delete(conditions, raw_conditions=raw_conditions)
+    def delete(self, conditions=None):
+        sql = self.sql.delete(conditions)
         result = execute(sql, auto_commit=True, db=self.__database__)
         return result['rowcount']  # 影响行数
