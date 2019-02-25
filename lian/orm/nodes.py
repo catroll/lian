@@ -10,14 +10,15 @@
 
 from __future__ import absolute_import, print_function
 
-import pymysql
 import logging
+import six
+import pymysql
 
 LOG = logging.getLogger(__name__)
 
 
 def escaped_str(_str):
-    assert isinstance(_str, str)
+    assert isinstance(_str, six.string_types)
     return pymysql.converters.escape_string(_str)
 
 
@@ -117,18 +118,24 @@ def make_tree(conditions, logger=LOG):
     logger.debug('make_tree: %r', conditions)
     if not conditions:
         return SQLNodeTree([])
+
+    if isinstance(conditions, six.string_types):
+        return conditions
+
     assert isinstance(conditions, (tuple, list, dict))
+
     if isinstance(conditions, dict):
         nodes = [SQLNode(k, v) for k, v in conditions.items()]
         return SQLNodeTree(nodes)
-    elif isinstance(conditions, (list, tuple)):
+
+    if isinstance(conditions, (list, tuple)):
         reverse = conditions[0] == 'NOT'
         if reverse:
             conditions = conditions[1:]
         relation = 'AND' if isinstance(conditions, tuple) else 'OR'
         return SQLNodeTree([make_tree(i) for i in conditions], relation=relation, reverse=reverse)
-    else:
-        raise Exception('make_tree error: condition type must be tuple, list, or dict, got %s', type(conditions))
+
+    raise Exception('make_tree error: condition type must be tuple, list, or dict, got %s' % type(conditions))
 
 
 def __test():
