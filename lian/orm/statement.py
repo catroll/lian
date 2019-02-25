@@ -69,10 +69,9 @@ class SQL:
             return '`%s`.`%s`' % (self.database, self.table)
         return '`%s`' % self.table
 
-    def select(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None,
-               raw_conditions=None):
+    def select(self, fields=None, conditions=None, limit=None, offset=None, order_by=None, group_by=None):
         fields_str = _fields_sql(fields, select_mode=True) or '*'
-        conditions_sql = raw_conditions or make_tree(conditions, self.logger)
+        conditions_sql = make_tree(conditions, self.logger)
         sql = 'SELECT %s FROM %s WHERE %s' % (fields_str, self.sql_table, conditions_sql)
 
         if isinstance(group_by, (tuple, list, str)) and group_by:
@@ -105,7 +104,7 @@ class SQL:
 
         return sql
 
-    def insert(self, values, fields=None, update=None, replace_mode=False):
+    def insert(self, values, fields=None, mode='insert', update=None, conditions=None):
         assert isinstance(values, (dict, list, tuple))
         if isinstance(values, dict):
             fields = list(values.keys())
@@ -114,26 +113,34 @@ class SQL:
             assert len(values) == len(fields)
         values_str = ', '.join([escaped_var(val) for val in values])
 
-        if replace_mode:
-            sql = 'REPLACE INTO %s (%s) VALUES (%s)' % (self.sql_table, _fields_sql(fields), values_str)
-        else:
+        if conditions:
             sql = 'INSERT INTO %s (%s) VALUES (%s)' % (self.sql_table, _fields_sql(fields), values_str)
             if update:
                 sql += ' ON DUPLICATE KEY UPDATE %s' % _set_sql(update)
+        elif mode == 'replace':
+            sql = 'REPLACE INTO %s (%s) VALUES (%s)' % (self.sql_table, _fields_sql(fields), values_str)
+        elif mode == 'insert-not-exists':
+            if not conditions:
+                raise Exception('insert(mode insert-not-exists): must has conditions param')
+            conditions_sql = make_tree(conditions, self.logger)
+            sql = 'INSERT INTO %s (%s) SELECT * FROM (SELECT %s) AS tmp WHERE NOT EXISTS (SELECT 1 FROM %s WHERE %s) LIMIT 1' % (
+                self.sql_table, _fields_sql(fields), values_str, self.sql_table, conditions_sql)
+        else:
+            raise Exception('error insert mode: %s' % mode)
 
         return sql
 
-    def update(self, values, conditions=None, raw_conditions=None):
-        conditions_sql = raw_conditions or make_tree(conditions, self.logger)
+    def update(self, values, conditions=None):
+        conditions_sql = make_tree(conditions, self.logger)
         sql = 'UPDATE %s SET %s WHERE %s' % (self.sql_table, _set_sql(values), conditions_sql)
         return sql
 
-    def count(self, conditions=None, raw_conditions=None):
-        conditions_sql = raw_conditions or make_tree(conditions, self.logger)
+    def count(self, conditions=None):
+        conditions_sql = make_tree(conditions, self.logger)
         sql = 'SELECT COUNT(1) FROM %s WHERE %s' % (self.sql_table, conditions_sql)
         return sql
 
-    def delete(self, conditions=None, raw_conditions=None):
-        conditions_sql = raw_conditions or make_tree(conditions, self.logger)
+    def delete(self, conditions=None):
+        conditions_sql = make_tree(conditions, self.logger)
         sql = 'DELETE FROM %s WHERE %s' % (self.sql_table, conditions_sql)
         return sql
