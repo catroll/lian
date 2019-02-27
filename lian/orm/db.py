@@ -89,6 +89,7 @@ class ConnectionPool(object):
 
         if cls._default_db not in config:
             cls._default_db = next(iter(config.keys()))
+            LOG.debug('All databases: %r', list(config.keys()))
             LOG.info('The database config has not DEFAULT_DB, choose %s as default database', cls._default_db)
 
         cls._config = config
@@ -281,7 +282,7 @@ def _execute(sql, need_return=False, auto_commit=False, db=DEFAULT_DB):
     :return:
     """
     with ConnectionContext(db) as conn:
-        conn.logger.debug('sql execute start...')
+        conn.logger.debug('[%s] sql execute start...', db)
         cur = None
         started_at = time.time()
         try:
@@ -314,7 +315,7 @@ def _execute(sql, need_return=False, auto_commit=False, db=DEFAULT_DB):
             if cur:
                 conn.logger.debug('Close cursor...')
                 cur.close()
-            conn.logger.debug('sql execute over...')
+            conn.logger.debug('[%s] sql execute over...', db)
 
 
 def execute(sql, auto_commit=False, db=DEFAULT_DB):
