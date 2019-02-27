@@ -34,7 +34,7 @@ RE_FUNC = re.compile('^(%s):(.+)$' % ('|'.join(FUNCS)))
 
 def _fields_sql(fields, select_mode=False):
     def _sql_func(field):
-        LOG.debug(field)
+        # LOG.debug(field)
         _re_func_result = RE_FUNC.search(field)
         if _re_func_result:
             func, field = _re_func_result.groups()
