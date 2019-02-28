@@ -394,6 +394,7 @@ class BASE(object):
         sql = self.sql.insert(values, fields=fields, mode=mode, update=update, conditions=conditions)
         result = execute(sql, auto_commit=True, db=self.__database__)
         if not result:
+            self.logger.warning('insert return %s: %s', result, sql)
             return None
         return self.get(result['lastrowid']) if refetch else result['lastrowid']
 
