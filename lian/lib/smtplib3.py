@@ -41,18 +41,21 @@ Example:
 #
 # This was modified from the Python 1.5 library HTTP lib.
 
-import socket
-import io
-import re
-import email.utils
-import email.message
-import email.generator
 import base64
-import hmac
 import copy
 import datetime
+import email.generator
+import email.message
+import email.utils
+import hmac
+import io
+import logging
+import re
+import socket
 import sys
 from email.base64mime import body_encode as encode_base64
+
+LOG = logging.getLogger('smtplib')
 
 __all__ = ["SMTPException", "SMTPServerDisconnected", "SMTPResponseException",
            "SMTPSenderRefused", "SMTPRecipientsRefused", "SMTPDataError",
@@ -293,10 +296,11 @@ class SMTP:
         self.debuglevel = debuglevel
 
     def _print_debug(self, *args):
+        msg = ' '.join([str(i) for i in args])
         if self.debuglevel > 1:
-            print(datetime.datetime.now().time(), *args, file=sys.stderr)
+            LOG.error(msg)
         else:
-            print(*args, file=sys.stderr)
+            LOG.debug(msg)
 
     def _get_socket(self, host, port, timeout):
         # This makes it simpler for SMTP_SSL to use the SMTP connect code
@@ -1093,7 +1097,7 @@ class LMTP(SMTP):
 
 # Test the sendmail method, which tests most of the others.
 # Note: This always sends to localhost.
-if __name__ == '__main__':
+def main():
     def prompt(prompt):
         sys.stdout.write(prompt + ": ")
         sys.stdout.flush()
@@ -1114,3 +1118,6 @@ if __name__ == '__main__':
     server.set_debuglevel(1)
     server.sendmail(fromaddr, toaddrs, msg)
     server.quit()
+
+if __name__ == '__main__':
+    main()
