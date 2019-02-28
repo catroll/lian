@@ -113,13 +113,13 @@ class SQL:
             assert len(values) == len(fields)
         values_str = ', '.join([escaped_var(val) for val in values])
 
-        if conditions:
+        if mode == 'insert':  # optional: update
             sql = 'INSERT INTO %s (%s) VALUES (%s)' % (self.sql_table, _fields_sql(fields), values_str)
             if update:
                 sql += ' ON DUPLICATE KEY UPDATE %s' % _set_sql(update)
         elif mode == 'replace':
             sql = 'REPLACE INTO %s (%s) VALUES (%s)' % (self.sql_table, _fields_sql(fields), values_str)
-        elif mode == 'insert-not-exists':
+        elif mode == 'insert-not-exists':  # must: conditions
             if not conditions:
                 raise Exception('insert(mode insert-not-exists): must has conditions param')
             conditions_sql = make_tree(conditions, self.logger)
