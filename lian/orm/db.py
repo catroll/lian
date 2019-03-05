@@ -398,6 +398,27 @@ class BASE(object):
             return None
         return self.get(result['lastrowid']) if refetch else result['lastrowid']
 
+    def insert_many(self, fields, values_list, update_fields=None):
+        if not fields:
+            fields = self.__fields__
+        sql = self.sql.insert_many(fields, values_list, update_fields)
+        result = execute(sql, auto_commit=True, db=self.__database__)
+        if not result:
+            self.logger.warning('insert return %s: %s', result, sql)
+            return None
+
+        # {
+        #     'rows': None,
+        #     'conn': <lian.orm.db.PooledConnection object at 0x7fae315a17f0>,
+        #     'rowcount': 500,
+        #     'description': None,
+        #     'lastrowid': 316613
+        # }
+        excepted_rows = len(values_list)
+        if result['rowcount'] != excepted_rows:
+            self.logger.warning('insert %s rows (excepted: %s)', result['rowcount'], excepted_rows)
+        return result
+
     def update(self, values, conditions=None):
         sql = self.sql.update(values, conditions=conditions)
         result = execute(sql, auto_commit=True, db=self.__database__)

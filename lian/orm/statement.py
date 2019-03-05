@@ -116,7 +116,7 @@ class SQL:
         if mode == 'insert':  # optional: update
             sql = 'INSERT INTO %s (%s) VALUES (%s)' % (self.sql_table, _fields_sql(fields), values_str)
             if update:
-                sql += ' ON DUPLICATE KEY UPDATE %s' % _set_sql(update)
+                sql += ' ON DUPLICATE KEY UPDATE %s' % (update if isinstance(update, str) else _set_sql(update))
         elif mode == 'replace':
             sql = 'REPLACE INTO %s (%s) VALUES (%s)' % (self.sql_table, _fields_sql(fields), values_str)
         elif mode == 'insert-not-exists':  # must: conditions
@@ -128,6 +128,19 @@ class SQL:
         else:
             raise Exception('error insert mode: %s' % mode)
 
+        return sql
+
+    def insert_many(self, fields, values_list, update_fields=None):
+        # ON DUPLICATE KEY UPDATE a_field = VALUES(a_field), date=VALUES(date)
+        values_str_list = []
+        for values in values_list:
+            assert isinstance(values, (list, tuple))
+            assert len(values) == len(fields)
+            values_str_list.append(', '.join([escaped_var(val) for val in values]))
+        sql = 'INSERT INTO %s (%s) VALUES (%s)' % (self.sql_table, _fields_sql(fields), '), ('.join(values_str_list))
+        if update_fields:
+            assert isinstance(update_fields, (list, tuple))
+            sql += ' ON DUPLICATE KEY UPDATE %s' % (', '.join(['`%s` = VALUES(`%s`)' % (f, f) for f in update_fields]))
         return sql
 
     def update(self, values, conditions=None):
