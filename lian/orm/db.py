@@ -23,11 +23,13 @@ import copy
 import logging
 import threading
 import time
+import uuid
 
 import pymysql
+from six.moves.queue import Queue
+
 from lian.orm import statement
 from lian.utils.naming import camel2underline
-from six.moves.queue import Queue
 
 DEFAULT_DB = 'default'
 DEFAULT_CONNECTIONS = 5
@@ -282,7 +284,9 @@ def _execute(sql, need_return=False, auto_commit=False, db=DEFAULT_DB):
     :return:
     """
     with ConnectionContext(db) as conn:
-        conn.logger.debug('[%s] sql execute start...', db)
+        query_uuid = uuid.uuid1()
+        conn.logger.debug('[%s] db %s: sql execute start...', query_uuid, db)
+        conn.logger.debug('[%s] sql: %s', query_uuid, sql)
         cur = None
         started_at = time.time()
         try:
@@ -302,20 +306,20 @@ def _execute(sql, need_return=False, auto_commit=False, db=DEFAULT_DB):
                 'description': cur.description,
                 'lastrowid': cur.lastrowid,
             })
-            # conn.logger.debug(result)
+            # conn.logger.debug('[%s] %r', query_uuid, result)
             return result
         except Exception as e:
-            conn.logger.exception(e)
+            conn.logger.exception('[%s] db %s: %s', query_uuid, db, e)
         finally:
             time_cost = time.time() - started_at
             if time_cost > 100:
-                conn.logger.warning('Slow SQL: %s, cost: %f', sql, time_cost)
+                conn.logger.warning('[%s] slow sql, cost: %f', query_uuid, time_cost)
             else:
-                conn.logger.debug('SQL: %r, cost: %f', sql, time_cost)
+                conn.logger.debug('[%s] cost: %f', query_uuid, time_cost)
             if cur:
-                conn.logger.debug('Close cursor...')
+                conn.logger.debug('[%s] close cursor...', query_uuid)
                 cur.close()
-            conn.logger.debug('[%s] sql execute over...', db)
+            conn.logger.debug('[%s] db %s: sql execute over...', query_uuid, db)
 
 
 def execute(sql, auto_commit=False, db=DEFAULT_DB):
