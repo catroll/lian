@@ -67,14 +67,20 @@ def decode(encoded):
 
 def __test():
     s = '我是中国人，我爱中国'
-    print('original: ' + s)
+    # print('original: ' + s)
     encoded = encode(s)
-    print(' encoded: ' + encoded)
+    # print(' encoded: ' + encoded)
     decoded = decode(encoded)
-    print(' decoded: ' + decoded)
-    assert decoded == s, '---> Error!!!'
-    print('---> OK')
+    # print(' decoded: ' + decoded)
+    # assert decoded == s, '---> Error!!!'
+    # print('---> OK')
 
 
 if __name__ == "__main__":
-    __test()
+    import time
+    started = time.time()
+    time.clock()
+    for _ in range(100000):
+        __test()
+    print(time.time() - started)
+    print(time.clock())
