@@ -1,6 +1,10 @@
 """
 Original: https://raw.githubusercontent.com/benediktschmitt/py-filelock/eda476814312dd815f566991676a787be22b1e67/filelock.py
 License: Public Domain
+
+with FileLock('/tmp/data.json.lock'):
+    with open('/tmp/data.json', 'w'):
+        # do something...
 """
 
 import fcntl
